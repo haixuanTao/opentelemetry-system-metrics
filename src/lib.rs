@@ -1,3 +1,22 @@
+//! This is my awesome crate Enabling system metrics from process to be observed using opentelemetry.
+//! Current metrics observed are:
+//! - CPU
+//! - Memory
+//! - Disk
+//! - Network
+//!
+//!
+//! # Getting started
+//!
+//! ```
+//! use opentelemetry::global;
+//! use opentelemetry_rust_system_metrics::init_process_observer;
+//!
+//! let meter = global::meter("process-meter");
+//! init_process_observer(meter);
+//! ```
+//!
+
 use sysinfo::ProcessExt;
 use sysinfo::SystemExt;
 use sysinfo::{get_current_pid, System};
@@ -13,7 +32,18 @@ const PROCESS_DISK_IO: &str = "process.disk.io";
 const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
 
-pub fn init_process_meter(meter: Meter) {
+// Record asynchronnously information about the current process.
+// # Example
+//
+// ```
+// use opentelemetry::global;
+// use opentelemetry_rust_system_metrics::init_process_observer;
+//
+// let meter = global::meter("process-meter");
+// init_process_observer(meter);
+// ```
+//
+pub fn init_process_observer(meter: Meter) {
     let mut sys = System::new_all();
 
     sys.refresh_all();
@@ -24,10 +54,10 @@ pub fn init_process_meter(meter: Meter) {
     meter.batch_observer(|batch| {
         let process_cpu_utilization = batch.f64_value_observer(PROCESS_CPU_USAGE).init();
         let process_cpu_usage = batch.f64_value_observer(PROCESS_CPU_UTILIZATION).init();
-        let process_memory_usage = batch.u64_value_observer(PROCESS_MEMORY_USAGE).init();
+        let process_memory_usage = batch.i64_up_down_sum_observer(PROCESS_MEMORY_USAGE).init();
         let process_memory_virtual = batch.u64_value_observer(PROCESS_MEMORY_VIRTUAL).init();
         let process_disk_io = batch.i64_value_observer(PROCESS_DISK_IO).init();
-        let process_network_io = batch.i64_value_observer(PROCESS_NETWORK_IO).init();
+        let process_network_io = batch.u64_sum_observer(PROCESS_NETWORK_IO).init();
 
         move |result: BatchObserverResult| {
             let mut sys = System::new();
