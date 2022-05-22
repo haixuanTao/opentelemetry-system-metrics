@@ -90,23 +90,21 @@ pub fn init_process_observer(meter: Meter) {
                     );
                     result.observe(
                         &[DIRECTION.string("read")],
-                        &[process_disk_io
-                            .observation(disk_io.total_read_bytes.try_into().unwrap())],
+                        &[process_disk_io.observation(disk_io.read_bytes.try_into().unwrap())],
                     );
                     result.observe(
                         &[DIRECTION.string("write")],
-                        &[process_disk_io
-                            .observation(disk_io.total_written_bytes.try_into().unwrap())],
+                        &[process_disk_io.observation(disk_io.written_bytes.try_into().unwrap())],
                     );
                     result.observe(
                         &[DIRECTION.string("receive")],
                         &[process_network_io
-                            .observation(network_io.total_received_bytes.try_into().unwrap())],
+                            .observation(network_io.received_bytes.try_into().unwrap())],
                     );
                     result.observe(
                         &[DIRECTION.string("transmit")],
                         &[process_network_io
-                            .observation(network_io.total_transmitted_bytes.try_into().unwrap())],
+                            .observation(network_io.transmitted_bytes.try_into().unwrap())],
                     );
                 }
             })

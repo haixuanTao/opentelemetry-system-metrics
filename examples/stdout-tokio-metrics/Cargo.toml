@@ -1,5 +1,5 @@
 [package]
-name = "opentelemetry-system-metrics"
+name = "stdout-tokio-metrics"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,12 +7,7 @@ edition = "2021"
 
 [dependencies]
 opentelemetry = { git="https://github.com/open-telemetry/opentelemetry-rust", features = ["rt-tokio", "metrics"] }
+opentelemetry-system-metrics = { path="../../" }
+futures = "0.3.12"
+tokio = { version="1.17.0", features=["full"]}
 sysinfo = { git="https://github.com/haixuanTao/sysinfo" }
-
-
-[workspace]
-members = [
-    ".",
-    "examples/stdout-tokio-metrics",
-    "examples/otlp-tokio-metrics"
-]
