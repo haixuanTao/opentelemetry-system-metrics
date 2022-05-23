@@ -67,12 +67,27 @@ pub fn init_process_observer(meter: Meter) {
 
     meter
         .build_batch_observer(|batch| {
-            let process_cpu_utilization = batch.f64_value_observer(PROCESS_CPU_USAGE).init();
+            let process_cpu_utilization = batch
+                .f64_value_observer(PROCESS_CPU_USAGE)
+                .with_description("The percentage of CPU in use.")
+                .init();
             let process_cpu_usage = batch.f64_value_observer(PROCESS_CPU_UTILIZATION).init();
-            let process_memory_usage = batch.i64_value_observer(PROCESS_MEMORY_USAGE).init();
-            let process_memory_virtual = batch.u64_value_observer(PROCESS_MEMORY_VIRTUAL).init();
-            let process_disk_io = batch.i64_value_observer(PROCESS_DISK_IO).init();
-            let process_network_io = batch.u64_value_observer(PROCESS_NETWORK_IO).init();
+            let process_memory_usage = batch
+                .i64_value_observer(PROCESS_MEMORY_USAGE)
+                .with_description("The amount of physical memory in use.")
+                .init();
+            let process_memory_virtual = batch
+                .i64_value_observer(PROCESS_MEMORY_VIRTUAL)
+                .with_description("The amount of committed virtual memory.")
+                .init();
+            let process_disk_io = batch
+                .i64_value_observer(PROCESS_DISK_IO)
+                .with_description("Disk bytes transferred.")
+                .init();
+            let process_network_io = batch
+                .i64_value_observer(PROCESS_NETWORK_IO)
+                .with_description("All network bytes transferred.")
+                .init();
 
             let sys = sys.clone();
 
