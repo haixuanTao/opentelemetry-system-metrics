@@ -10,9 +10,3 @@ opentelemetry = { git="https://github.com/open-telemetry/opentelemetry-rust", fe
 sysinfo = { git="https://github.com/haixuanTao/sysinfo" }
 indexmap = "1.8"
 
-[workspace]
-members = [
-    ".",
-    "examples/stdout-tokio-metrics",
-    "examples/otlp-tokio-metrics"
-]
