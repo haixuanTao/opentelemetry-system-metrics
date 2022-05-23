@@ -16,6 +16,7 @@
 //! init_process_observer(meter);
 //! ```
 //!
+use opentelemetry::metrics::Unit;
 use std::sync::Arc;
 use std::sync::Mutex;
 use sysinfo::PidExt;
@@ -75,18 +76,22 @@ pub fn init_process_observer(meter: Meter) {
             let process_memory_usage = batch
                 .i64_value_observer(PROCESS_MEMORY_USAGE)
                 .with_description("The amount of physical memory in use.")
+                .with_unit(Unit::new("byte"))
                 .init();
             let process_memory_virtual = batch
                 .i64_value_observer(PROCESS_MEMORY_VIRTUAL)
                 .with_description("The amount of committed virtual memory.")
+                .with_unit(Unit::new("byte"))
                 .init();
             let process_disk_io = batch
                 .i64_value_observer(PROCESS_DISK_IO)
                 .with_description("Disk bytes transferred.")
+                .with_unit(Unit::new("byte"))
                 .init();
             let process_network_io = batch
                 .i64_value_observer(PROCESS_NETWORK_IO)
                 .with_description("All network bytes transferred.")
+                .with_unit(Unit::new("byte"))
                 .init();
 
             let sys = sys.clone();
@@ -96,7 +101,7 @@ pub fn init_process_observer(meter: Meter) {
                     PROCESS_PID.i64(pid.as_u32().into()),
                     PROCESS_EXECUTABLE_NAME.string(process.name().to_string()),
                     PROCESS_EXECUTABLE_PATH.string(process.exe().to_str().unwrap().to_string()),
-                    PROCESS_COMMAND.string(process.cmd().concat().to_string()),
+                    PROCESS_COMMAND.string(process.cmd().join(" ").to_string()),
                 ]
             } else {
                 unimplemented!()
