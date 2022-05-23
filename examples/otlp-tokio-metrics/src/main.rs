@@ -6,6 +6,7 @@ use opentelemetry::{global, metrics};
 use opentelemetry_otlp::{ExportConfig, WithExportConfig};
 use opentelemetry_system_metrics::init_process_observer;
 use std::time::Duration;
+
 // Skip first immediate tick from tokio, not needed for async_std.
 fn delayed_interval(duration: Duration) -> impl Stream<Item = tokio::time::Instant> {
     opentelemetry::sdk::util::tokio_interval_stream(duration).skip(1)
