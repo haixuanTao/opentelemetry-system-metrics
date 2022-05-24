@@ -44,7 +44,7 @@ const PROCESS_CPU_UTILIZATION: &str = "process.cpu.utilization";
 const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
 const PROCESS_MEMORY_VIRTUAL: &str = "process.memory.virtual";
 const PROCESS_DISK_IO: &str = "process.disk.io";
-const PROCESS_NETWORK_IO: &str = "process.network.io";
+// const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
 
 // Record asynchronnously information about the current process.
@@ -88,11 +88,11 @@ pub fn init_process_observer(meter: Meter) {
                 .with_description("Disk bytes transferred.")
                 .with_unit(Unit::new("byte"))
                 .init();
-            let process_network_io = batch
-                .i64_value_observer(PROCESS_NETWORK_IO)
-                .with_description("All network bytes transferred.")
-                .with_unit(Unit::new("byte"))
-                .init();
+            // let process_network_io = batch
+            //     .i64_value_observer(PROCESS_NETWORK_IO)
+            //     .with_description("All network bytes transferred.")
+            //     .with_unit(Unit::new("byte"))
+            //     .init();
 
             let sys = sys.clone();
 
@@ -115,7 +115,7 @@ pub fn init_process_observer(meter: Meter) {
                 if let Some(process) = sys_lock.process(pid) {
                     let cpu_usage = process.cpu_usage() / 100.;
                     let disk_io = process.disk_usage();
-                    let network_io = process.network_usage();
+                    // let network_io = process.network_usage();
                     result.observe(&[], &[process_cpu_usage.observation(cpu_usage.into())]);
                     result.observe(
                         &common_attributes,
@@ -124,12 +124,13 @@ pub fn init_process_observer(meter: Meter) {
                     );
                     result.observe(
                         &common_attributes,
-                        &[process_memory_usage.observation(process.memory().try_into().unwrap())],
+                        &[process_memory_usage
+                            .observation((process.memory() * 1_000).try_into().unwrap())],
                     );
                     result.observe(
                         &common_attributes,
                         &[process_memory_virtual
-                            .observation(process.virtual_memory().try_into().unwrap())],
+                            .observation((process.virtual_memory() * 1_000).try_into().unwrap())],
                     );
                     result.observe(
                         &[common_attributes.as_slice(), &[DIRECTION.string("read")]].concat(),
@@ -139,20 +140,20 @@ pub fn init_process_observer(meter: Meter) {
                         &[common_attributes.as_slice(), &[DIRECTION.string("write")]].concat(),
                         &[process_disk_io.observation(disk_io.written_bytes.try_into().unwrap())],
                     );
-                    result.observe(
-                        &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
-                        &[process_network_io
-                            .observation(network_io.received_bytes.try_into().unwrap())],
-                    );
-                    result.observe(
-                        &[
-                            common_attributes.as_slice(),
-                            &[DIRECTION.string("transmit")],
-                        ]
-                        .concat(),
-                        &[process_network_io
-                            .observation(network_io.transmitted_bytes.try_into().unwrap())],
-                    );
+                    // result.observe(
+                    //     &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
+                    //     &[process_network_io
+                    //         .observation(network_io.received_bytes.try_into().unwrap())],
+                    // );
+                    // result.observe(
+                    //     &[
+                    //         common_attributes.as_slice(),
+                    //         &[DIRECTION.string("transmit")],
+                    //     ]
+                    //     .concat(),
+                    //     &[process_network_io
+                    //         .observation(network_io.transmitted_bytes.try_into().unwrap())],
+                    // );
                 }
             })
         })

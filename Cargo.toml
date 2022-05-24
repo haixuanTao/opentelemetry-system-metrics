@@ -9,4 +9,3 @@ edition = "2021"
 opentelemetry = { git="https://github.com/open-telemetry/opentelemetry-rust", features = ["rt-tokio", "metrics"] }
 sysinfo = { git="https://github.com/haixuanTao/sysinfo" }
 indexmap = "1.8"
-
