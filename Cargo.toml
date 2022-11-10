@@ -9,5 +9,5 @@ description = "System metric export through Opentelemetry"
 
 [dependencies]
 opentelemetry = { version="0.17.0", features = ["rt-tokio", "metrics"] }
-sysinfo = "0.24.5"
+sysinfo = "0.26.6"
 indexmap = "1.8"
