@@ -4,10 +4,11 @@ version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
 description = "System metric export through Opentelemetry"
+repository = "https://github.com/haixuanTao/opentelemetry-system-metrics"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-opentelemetry = { version="0.17.0", features = ["rt-tokio", "metrics"] }
-sysinfo = "0.26.6"
+opentelemetry = { version = "0.18.0", features = ["rt-tokio", "metrics"] }
+sysinfo = "0.29"
 indexmap = "1.8"
