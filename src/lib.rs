@@ -83,69 +83,79 @@ pub fn init_process_observer(meter: Meter) {
         .init();
 
     meter
-        .register_callback(move |context| {
-            let mut sys = System::new_all();
-            sys.refresh_processes();
+        .register_callback(
+            &[
+                process_cpu_utilization.as_any(),
+                process_cpu_usage.as_any(),
+                process_memory_usage.as_any(),
+                process_memory_virtual.as_any(),
+                process_disk_io.as_any(),
+            ],
+            move |context| {
+                let mut sys = System::new_all();
+                sys.refresh_processes();
 
-            let common_attributes = if let Some(process) = sys.process(pid) {
-                [
-                    PROCESS_PID.i64(pid.as_u32().into()),
-                    PROCESS_EXECUTABLE_NAME.string(process.name().to_string()),
-                    PROCESS_EXECUTABLE_PATH.string(process.exe().to_str().unwrap().to_string()),
-                    PROCESS_COMMAND.string(process.cmd().join(" ").to_string()),
-                ]
-            } else {
-                unimplemented!()
-            };
+                let common_attributes = if let Some(process) = sys.process(pid) {
+                    [
+                        PROCESS_PID.i64(pid.as_u32().into()),
+                        PROCESS_EXECUTABLE_NAME.string(process.name().to_string()),
+                        PROCESS_EXECUTABLE_PATH.string(process.exe().to_str().unwrap().to_string()),
+                        PROCESS_COMMAND.string(process.cmd().join(" ").to_string()),
+                    ]
+                } else {
+                    unimplemented!()
+                };
 
-            sys.refresh_process(pid);
+                sys.refresh_process(pid);
 
-            if let Some(process) = sys.process(pid) {
-                let cpu_usage = process.cpu_usage() / 100.;
-                let disk_io = process.disk_usage();
-                // let network_io = process.network_usage();
-                process_cpu_usage.observe(context, cpu_usage.into(), &[]);
-                process_cpu_utilization.observe(
-                    context,
-                    (cpu_usage / core_count as f32).into(),
-                    &common_attributes,
-                );
-                process_memory_usage.observe(
-                    context,
-                    (process.memory() * 1_000).try_into().unwrap(),
-                    &common_attributes,
-                );
-                process_memory_virtual.observe(
-                    context,
-                    (process.virtual_memory() * 1_000).try_into().unwrap(),
-                    &common_attributes,
-                );
-                process_disk_io.observe(
-                    context,
-                    disk_io.read_bytes.try_into().unwrap(),
-                    &[common_attributes.as_slice(), &[DIRECTION.string("read")]].concat(),
-                );
-                process_disk_io.observe(
-                    context,
-                    disk_io.written_bytes.try_into().unwrap(),
-                    &[common_attributes.as_slice(), &[DIRECTION.string("write")]].concat(),
-                );
+                if let Some(process) = sys.process(pid) {
+                    let cpu_usage = process.cpu_usage() / 100.;
+                    let disk_io = process.disk_usage();
+                    // let network_io = process.network_usage();
 
-                // result.observe(
-                //     &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
-                //     &[process_network_io
-                //         .observe(context,(network_io.received_bytes.try_into().unwrap())],
-                // );
-                // result.observe(
-                //     &[
-                //         common_attributes.as_slice(),
-                //         &[DIRECTION.string("transmit")],
-                //     ]
-                //     .concat(),
-                //     &[process_network_io
-                //         .observe(context,(network_io.transmitted_bytes.try_into().unwrap())],
-                // );
-            }
-        })
+                    context.observe_f64(&process_cpu_usage, cpu_usage.into(), &[]);
+                    context.observe_f64(
+                        &process_cpu_utilization,
+                        (cpu_usage / core_count as f32).into(),
+                        &common_attributes,
+                    );
+                    context.observe_i64(
+                        &process_memory_usage,
+                        (process.memory() * 1_000).try_into().unwrap(),
+                        &common_attributes,
+                    );
+                    context.observe_i64(
+                        &process_memory_virtual,
+                        (process.virtual_memory() * 1_000).try_into().unwrap(),
+                        &common_attributes,
+                    );
+                    context.observe_i64(
+                        &process_disk_io,
+                        disk_io.read_bytes.try_into().unwrap(),
+                        &[common_attributes.as_slice(), &[DIRECTION.string("read")]].concat(),
+                    );
+                    context.observe_i64(
+                        &process_disk_io,
+                        disk_io.written_bytes.try_into().unwrap(),
+                        &[common_attributes.as_slice(), &[DIRECTION.string("write")]].concat(),
+                    );
+
+                    // result.observe(
+                    //     &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
+                    //     &[process_network_io
+                    //         .observe(context,(network_io.received_bytes.try_into().unwrap())],
+                    // );
+                    // result.observe(
+                    //     &[
+                    //         common_attributes.as_slice(),
+                    //         &[DIRECTION.string("transmit")],
+                    //     ]
+                    //     .concat(),
+                    //     &[process_network_io
+                    //         .observe(context,(network_io.transmitted_bytes.try_into().unwrap())],
+                    // );
+                }
+            },
+        )
         .unwrap();
 }
