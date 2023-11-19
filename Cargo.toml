@@ -14,7 +14,7 @@ sysinfo = "0.29"
 indexmap = "1.8"
 
 [dev-dependencies]
-opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio", "metrics"] }
 futures = "0.3.12"
 tokio = { version = "1.17.0", features = ["full"] }
 opentelemetry-otlp = { version = "0.14.0", features = ["tonic", "metrics"] }

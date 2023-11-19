@@ -121,12 +121,12 @@ pub fn init_process_observer(meter: Meter) {
                     );
                     context.observe_i64(
                         &process_memory_usage,
-                        (process.memory() * 1_000).try_into().unwrap(),
+                        (process.memory()).try_into().unwrap(),
                         &common_attributes,
                     );
                     context.observe_i64(
                         &process_memory_virtual,
-                        (process.virtual_memory() * 1_000).try_into().unwrap(),
+                        (process.virtual_memory()).try_into().unwrap(),
                         &common_attributes,
                     );
                     context.observe_i64(
