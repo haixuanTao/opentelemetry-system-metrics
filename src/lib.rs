@@ -210,10 +210,10 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
 
                                 break;
                             }
-
-                            // If the loop finishes and no pid matched our pid, put 0.
-                            context.observe_u64(&process_gpu_memory_usage, 0, &common_attributes);
                         }
+
+                        // If the loop finishes and no pid matched our pid, put 0.
+                        context.observe_u64(&process_gpu_memory_usage, 0, &common_attributes);
                     };
                 }
             },
