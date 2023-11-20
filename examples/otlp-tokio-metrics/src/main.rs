@@ -28,7 +28,9 @@ fn init_metrics() -> metrics::Result<MeterProvider> {
 async fn main() {
     let _started = init_metrics();
     let meter = global::meter("process-meter");
-    init_process_observer(meter);
+    init_process_observer(meter).unwrap();
+
+    // Do some work
 
     tokio::time::sleep(Duration::from_secs(120)).await
 }

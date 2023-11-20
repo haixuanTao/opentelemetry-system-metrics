@@ -16,6 +16,12 @@
 //! init_process_observer(meter);
 //! ```
 //!
+
+use eyre::Context;
+use eyre::ContextCompat;
+use eyre::Result;
+use nvml_wrapper::enums::device::UsedGpuMemory;
+use nvml_wrapper::Nvml;
 use opentelemetry::metrics::Unit;
 
 use sysinfo::PidExt;
@@ -46,6 +52,9 @@ const PROCESS_DISK_IO: &str = "process.disk.io";
 // const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
 
+// const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
+const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
+
 // Record asynchronnously information about the current process.
 // # Example
 //
@@ -57,15 +66,30 @@ const DIRECTION: Key = Key::from_static_str("direction");
 // init_process_observer(meter);
 // ```
 //
-pub fn init_process_observer(meter: Meter) {
-    let pid = get_current_pid().unwrap();
+pub fn init_process_observer(meter: Meter) -> Result<()> {
+    let pid =
+        get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
     let sys_ = System::new_all();
-    let core_count = sys_.physical_core_count().unwrap();
+    let core_count = sys_
+        .physical_core_count()
+        .with_context(|| "Could not get physical core count")?;
+
+    let nvml = Nvml::init();
+    if let Err(err) = &nvml {
+        tracing::warn!(
+            "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
+            err
+        )
+    }
+
     let process_cpu_utilization = meter
         .f64_observable_gauge(PROCESS_CPU_USAGE)
         .with_description("The percentage of CPU in use.")
         .init();
-    let process_cpu_usage = meter.f64_observable_gauge(PROCESS_CPU_UTILIZATION).init();
+    let process_cpu_usage = meter
+        .f64_observable_gauge(PROCESS_CPU_UTILIZATION)
+        .with_description("The amount of CPU in use.")
+        .init();
     let process_memory_usage = meter
         .i64_observable_gauge(PROCESS_MEMORY_USAGE)
         .with_description("The amount of physical memory in use.")
@@ -82,6 +106,12 @@ pub fn init_process_observer(meter: Meter) {
         .with_unit(Unit::new("byte"))
         .init();
 
+    let process_gpu_memory_usage = meter
+        .u64_observable_gauge(PROCESS_GPU_MEMORY_USAGE)
+        .with_description("The amount of physical GPU memory in use.")
+        .with_unit(Unit::new("byte"))
+        .init();
+
     meter
         .register_callback(
             &[
@@ -90,6 +120,7 @@ pub fn init_process_observer(meter: Meter) {
                 process_memory_usage.as_any(),
                 process_memory_virtual.as_any(),
                 process_disk_io.as_any(),
+                process_gpu_memory_usage.as_any(),
             ],
             move |context| {
                 let mut sys = System::new_all();
@@ -109,7 +140,7 @@ pub fn init_process_observer(meter: Meter) {
                 sys.refresh_process(pid);
 
                 if let Some(process) = sys.process(pid) {
-                    let cpu_usage = process.cpu_usage() / 100.;
+                    let cpu_usage = process.cpu_usage();
                     let disk_io = process.disk_usage();
                     // let network_io = process.network_usage();
 
@@ -155,7 +186,38 @@ pub fn init_process_observer(meter: Meter) {
                     //         .observe(context,(network_io.transmitted_bytes.try_into().unwrap())],
                     // );
                 }
+
+                // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
+                if nvml.is_err() {
+                    return;
+                }
+
+                // Get the first `Device` (GPU) in the system
+                if let Ok(device) = nvml.as_ref().unwrap().device_by_index(0) {
+                    if let Ok(gpu_stats) = device.running_compute_processes() {
+                        for stat in gpu_stats.iter() {
+                            if stat.pid == pid.as_u32() {
+                                let memory_used = match stat.used_gpu_memory {
+                                    UsedGpuMemory::Used(bytes) => bytes,
+                                    UsedGpuMemory::Unavailable => 0,
+                                };
+
+                                context.observe_u64(
+                                    &process_gpu_memory_usage,
+                                    memory_used,
+                                    &common_attributes,
+                                );
+
+                                break;
+                            }
+
+                            // If the loop finishes and no pid matched our pid, put 0.
+                            context.observe_u64(&process_gpu_memory_usage, 0, &common_attributes);
+                        }
+                    };
+                }
             },
         )
-        .unwrap();
+        .context("could not register traceback")?;
+    Ok(())
 }

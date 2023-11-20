@@ -12,6 +12,9 @@ repository = "https://github.com/haixuanTao/opentelemetry-system-metrics"
 opentelemetry = { version = "0.21.0", features = ["metrics"] }
 sysinfo = "0.29"
 indexmap = "1.8"
+nvml-wrapper = "0.9.0"
+eyre = "0.6.8"
+tracing = "0.1.40"
 
 [dev-dependencies]
 opentelemetry_sdk = { version = "0.21.0", features = ["rt-tokio", "metrics"] }
