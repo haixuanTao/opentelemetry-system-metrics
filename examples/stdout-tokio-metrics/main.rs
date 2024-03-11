@@ -1,16 +1,16 @@
 use opentelemetry::metrics::MeterProvider as _;
 use opentelemetry_sdk::{
-    metrics::{MeterProvider, PeriodicReader},
+    metrics::{PeriodicReader, SdkMeterProvider},
     runtime,
 };
 use opentelemetry_system_metrics::init_process_observer;
 use std::time::Duration;
-fn init_metrics() -> MeterProvider {
+fn init_metrics() -> SdkMeterProvider {
     let exporter = opentelemetry_stdout::MetricsExporter::default();
     let reader = PeriodicReader::builder(exporter, runtime::Tokio)
         .with_interval(Duration::from_secs(1))
         .build();
-    MeterProvider::builder().with_reader(reader).build()
+    SdkMeterProvider::builder().with_reader(reader).build()
 }
 
 #[tokio::main]

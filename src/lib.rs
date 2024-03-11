@@ -76,7 +76,7 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
 
     let nvml = Nvml::init();
     if let Err(err) = &nvml {
-        tracing::warn!(
+        tracing::info!(
             "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
             err
         )
@@ -189,6 +189,7 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
 
                 // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
                 if nvml.is_err() {
+                    println!("Couldn't use nvml for gpu memory usage");
                     return;
                 }
 

@@ -4,11 +4,11 @@ use opentelemetry::{
 };
 
 use opentelemetry_otlp::{ExportConfig, WithExportConfig};
-use opentelemetry_sdk::{metrics::MeterProvider, runtime};
+use opentelemetry_sdk::{metrics::SdkMeterProvider, runtime};
 use opentelemetry_system_metrics::init_process_observer;
 use std::time::Duration;
 
-fn init_metrics() -> metrics::Result<MeterProvider> {
+fn init_metrics() -> metrics::Result<SdkMeterProvider> {
     let export_config = ExportConfig {
         endpoint: "http://localhost:4317".to_string(),
         ..ExportConfig::default()
