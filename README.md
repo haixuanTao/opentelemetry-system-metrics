@@ -1,14 +1,20 @@
 # opentelemetry-system-metrics
 
-This is my awesome crate Enabling system metrics from process to be observed using opentelemetry.
+This is my awesome crate enabling process level system metrics using opentelemetry.
+
 Current metrics observed are:
 
 - CPU
 - Memory
 - Disk
 - Network
+- GPU Memory
 
 ## Getting started
+
+```bash
+cargo add opentelemetry_system_metrics
+```
 
 ```rust
 use opentelemetry::global;
