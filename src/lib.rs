@@ -75,12 +75,6 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
         .with_context(|| "Could not get physical core count")?;
 
     let nvml = Nvml::init();
-    if let Err(err) = &nvml {
-        tracing::info!(
-            "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
-            err
-        )
-    }
 
     let process_cpu_utilization = meter
         .f64_observable_gauge(PROCESS_CPU_USAGE)
@@ -188,34 +182,41 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
                 }
 
                 // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
-                if nvml.is_err() {
-                    println!("Couldn't use nvml for gpu memory usage");
-                    return;
-                }
+                match &nvml {
+                    Ok(nvml) => {
+                        // Get the first `Device` (GPU) in the system
+                        if let Ok(device) = nvml.device_by_index(0) {
+                            if let Ok(gpu_stats) = device.running_compute_processes() {
+                                for stat in gpu_stats.iter() {
+                                    if stat.pid == pid.as_u32() {
+                                        let memory_used = match stat.used_gpu_memory {
+                                            UsedGpuMemory::Used(bytes) => bytes,
+                                            UsedGpuMemory::Unavailable => 0,
+                                        };
 
-                // Get the first `Device` (GPU) in the system
-                if let Ok(device) = nvml.as_ref().unwrap().device_by_index(0) {
-                    if let Ok(gpu_stats) = device.running_compute_processes() {
-                        for stat in gpu_stats.iter() {
-                            if stat.pid == pid.as_u32() {
-                                let memory_used = match stat.used_gpu_memory {
-                                    UsedGpuMemory::Used(bytes) => bytes,
-                                    UsedGpuMemory::Unavailable => 0,
-                                };
+                                        context.observe_u64(
+                                            &process_gpu_memory_usage,
+                                            memory_used,
+                                            &common_attributes,
+                                        );
 
+                                        break;
+                                    }
+                                }
+
+                                // If the loop finishes and no pid matched our pid, put 0.
                                 context.observe_u64(
                                     &process_gpu_memory_usage,
-                                    memory_used,
+                                    0,
                                     &common_attributes,
                                 );
-
-                                break;
-                            }
+                            };
                         }
-
-                        // If the loop finishes and no pid matched our pid, put 0.
-                        context.observe_u64(&process_gpu_memory_usage, 0, &common_attributes);
-                    };
+                    }
+                    Err(err) => tracing::info!(
+                        "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
+                        err
+                    ),
                 }
             },
         )
