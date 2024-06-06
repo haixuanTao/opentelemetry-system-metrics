@@ -55,17 +55,17 @@ const DIRECTION: Key = Key::from_static_str("direction");
 // const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
-// Record asynchronnously information about the current process.
-// # Example
-//
-// ```
-// use opentelemetry::global;
-// use opentelemetry_system_metrics::init_process_observer;
-//
-// let meter = global::meter("process-meter");
-// init_process_observer(meter);
-// ```
-//
+/// Record asynchronnously information about the current process.
+/// # Example
+///
+/// ```
+/// use opentelemetry::global;
+/// use opentelemetry_system_metrics::init_process_observer;
+///
+/// let meter = global::meter("process-meter");
+/// init_process_observer(meter);
+/// ```
+///
 pub fn init_process_observer(meter: Meter) -> Result<()> {
     let pid =
         get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
