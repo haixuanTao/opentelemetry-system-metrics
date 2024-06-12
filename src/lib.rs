@@ -55,20 +55,41 @@ const DIRECTION: Key = Key::from_static_str("direction");
 // const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
-// Record asynchronnously information about the current process.
-// # Example
-//
-// ```
-// use opentelemetry::global;
-// use opentelemetry_system_metrics::init_process_observer;
-//
-// let meter = global::meter("process-meter");
-// init_process_observer(meter);
-// ```
-//
+/// Record asynchronnously information about the current process.
+/// # Example
+///
+/// ```
+/// use opentelemetry::global;
+/// use opentelemetry_system_metrics::init_process_observer;
+///
+/// let meter = global::meter("process-meter");
+/// init_process_observer(meter);
+/// ```
+///
 pub fn init_process_observer(meter: Meter) -> Result<()> {
     let pid =
         get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
+    register_metrics(meter, pid)
+}
+
+/// Record asynchronously information about a specific process by its PID.
+/// # Example
+///
+/// ```
+/// use opentelemetry::global;
+/// use opentelemetry_system_metrics::init_process_observer_for_pid;
+///
+/// let meter = global::meter("process-meter");
+/// let pid = 1234; // replace with the actual PID
+/// init_process_observer_for_pid(meter, pid);
+/// ```
+///
+pub fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
+    let pid = sysinfo::Pid::from_u32(pid);
+    register_metrics(meter, pid)
+}
+
+fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
     let sys_ = System::new_all();
     let core_count = sys_
         .physical_core_count()
