@@ -16,13 +16,10 @@
 //! init_process_observer(meter);
 //! ```
 //!
-
-use eyre::Context;
 use eyre::ContextCompat;
 use eyre::Result;
 use nvml_wrapper::enums::device::UsedGpuMemory;
 use nvml_wrapper::Nvml;
-use opentelemetry::metrics::Unit;
 
 use sysinfo::PidExt;
 
@@ -31,12 +28,7 @@ use sysinfo::SystemExt;
 use sysinfo::{get_current_pid, System};
 
 use opentelemetry::metrics::Meter;
-use opentelemetry::Key;
-
-const PROCESS_PID: Key = Key::from_static_str("process.pid");
-const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
-const PROCESS_EXECUTABLE_PATH: Key = Key::from_static_str("process.executable.path");
-const PROCESS_COMMAND: Key = Key::from_static_str("process.command");
+use opentelemetry::KeyValue;
 
 // Not implemented yet!
 //
@@ -50,7 +42,7 @@ const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
 const PROCESS_MEMORY_VIRTUAL: &str = "process.memory.virtual";
 const PROCESS_DISK_IO: &str = "process.disk.io";
 // const PROCESS_NETWORK_IO: &str = "process.network.io";
-const DIRECTION: Key = Key::from_static_str("direction");
+const DIRECTION: &str = "direction";
 
 // const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
@@ -97,150 +89,125 @@ fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
 
     let nvml = Nvml::init();
 
-    let process_cpu_utilization = meter
-        .f64_observable_gauge(PROCESS_CPU_USAGE)
-        .with_description("The percentage of CPU in use.")
-        .init();
-    let process_cpu_usage = meter
-        .f64_observable_gauge(PROCESS_CPU_UTILIZATION)
-        .with_description("The amount of CPU in use.")
-        .init();
-    let process_memory_usage = meter
-        .i64_observable_gauge(PROCESS_MEMORY_USAGE)
-        .with_description("The amount of physical memory in use.")
-        .with_unit(Unit::new("byte"))
-        .init();
-    let process_memory_virtual = meter
-        .i64_observable_gauge(PROCESS_MEMORY_VIRTUAL)
-        .with_description("The amount of committed virtual memory.")
-        .with_unit(Unit::new("byte"))
-        .init();
-    let process_disk_io = meter
-        .i64_observable_gauge(PROCESS_DISK_IO)
-        .with_description("Disk bytes transferred.")
-        .with_unit(Unit::new("byte"))
-        .init();
-
-    let process_gpu_memory_usage = meter
-        .u64_observable_gauge(PROCESS_GPU_MEMORY_USAGE)
-        .with_description("The amount of physical GPU memory in use.")
-        .with_unit(Unit::new("byte"))
-        .init();
-
+    // CPU Usage
     meter
-        .register_callback(
-            &[
-                process_cpu_utilization.as_any(),
-                process_cpu_usage.as_any(),
-                process_memory_usage.as_any(),
-                process_memory_virtual.as_any(),
-                process_disk_io.as_any(),
-                process_gpu_memory_usage.as_any(),
-            ],
-            move |context| {
-                let mut sys = System::new_all();
-                sys.refresh_processes();
+        .f64_observable_gauge(PROCESS_CPU_USAGE)
+        .with_description("CPU usage of the process")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
 
-                let common_attributes = if let Some(process) = sys.process(pid) {
-                    [
-                        PROCESS_PID.i64(pid.as_u32().into()),
-                        PROCESS_EXECUTABLE_NAME.string(process.name().to_string()),
-                        PROCESS_EXECUTABLE_PATH.string(process.exe().to_str().unwrap().to_string()),
-                        PROCESS_COMMAND.string(process.cmd().join(" ").to_string()),
-                    ]
-                } else {
-                    unimplemented!()
-                };
+            if let Some(process) = sys.process(pid) {
+                let cpu_usage = process.cpu_usage();
+                observer.observe(cpu_usage.into(), &[]);
+            }
+        })
+        .build();
 
-                sys.refresh_process(pid);
+    // CPU Utilization
+    meter
+        .f64_observable_gauge(PROCESS_CPU_UTILIZATION)
+        .with_description("CPU utilization of the process as a fraction of core count")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
 
-                if let Some(process) = sys.process(pid) {
-                    let cpu_usage = process.cpu_usage();
-                    let disk_io = process.disk_usage();
-                    // let network_io = process.network_usage();
+            if let Some(process) = sys.process(pid) {
+                let cpu_utilization = process.cpu_usage() / core_count as f32;
+                observer.observe(cpu_utilization.into(), &[]);
+            }
+        })
+        .build();
 
-                    context.observe_f64(&process_cpu_usage, cpu_usage.into(), &[]);
-                    context.observe_f64(
-                        &process_cpu_utilization,
-                        (cpu_usage / core_count as f32).into(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_memory_usage,
-                        (process.memory()).try_into().unwrap(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_memory_virtual,
-                        (process.virtual_memory()).try_into().unwrap(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_disk_io,
-                        disk_io.read_bytes.try_into().unwrap(),
-                        &[common_attributes.as_slice(), &[DIRECTION.string("read")]].concat(),
-                    );
-                    context.observe_i64(
-                        &process_disk_io,
-                        disk_io.written_bytes.try_into().unwrap(),
-                        &[common_attributes.as_slice(), &[DIRECTION.string("write")]].concat(),
-                    );
+    // Memory Usage
+    meter
+        .i64_observable_gauge(PROCESS_MEMORY_USAGE)
+        .with_description("Memory usage of the process")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
 
-                    // result.observe(
-                    //     &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
-                    //     &[process_network_io
-                    //         .observe(context,(network_io.received_bytes.try_into().unwrap())],
-                    // );
-                    // result.observe(
-                    //     &[
-                    //         common_attributes.as_slice(),
-                    //         &[DIRECTION.string("transmit")],
-                    //     ]
-                    //     .concat(),
-                    //     &[process_network_io
-                    //         .observe(context,(network_io.transmitted_bytes.try_into().unwrap())],
-                    // );
-                }
+            if let Some(process) = sys.process(pid) {
+                observer.observe(process.memory() as i64, &[]);
+            }
+        })
+        .build();
 
-                // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
-                match &nvml {
-                    Ok(nvml) => {
-                        // Get the first `Device` (GPU) in the system
-                        if let Ok(device) = nvml.device_by_index(0) {
-                            if let Ok(gpu_stats) = device.running_compute_processes() {
-                                for stat in gpu_stats.iter() {
-                                    if stat.pid == pid.as_u32() {
-                                        let memory_used = match stat.used_gpu_memory {
-                                            UsedGpuMemory::Used(bytes) => bytes,
-                                            UsedGpuMemory::Unavailable => 0,
-                                        };
+    // Virtual Memory Usage
+    meter
+        .i64_observable_gauge(PROCESS_MEMORY_VIRTUAL)
+        .with_description("Virtual memory usage of the process")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
 
-                                        context.observe_u64(
-                                            &process_gpu_memory_usage,
-                                            memory_used,
-                                            &common_attributes,
-                                        );
+            if let Some(process) = sys.process(pid) {
+                observer.observe(process.virtual_memory() as i64, &[]);
+            }
+        })
+        .build();
 
-                                        break;
-                                    }
+    // Disk I/O Read
+    meter
+        .i64_observable_gauge(PROCESS_DISK_IO)
+        .with_description("Disk I/O read bytes of the process")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
+
+            if let Some(process) = sys.process(pid) {
+                observer.observe(
+                    process.disk_usage().read_bytes as i64,
+                    &[KeyValue::new(DIRECTION, "read")],
+                );
+            }
+        })
+        .build();
+
+    // Disk I/O Write
+    meter
+        .i64_observable_gauge(PROCESS_DISK_IO)
+        .with_description("Disk I/O write bytes of the process")
+        .with_callback(move |observer| {
+            let mut sys = System::new_all();
+            sys.refresh_process(pid);
+
+            if let Some(process) = sys.process(pid) {
+                observer.observe(
+                    process.disk_usage().written_bytes as i64,
+                    &[KeyValue::new(DIRECTION, "write")],
+                );
+            }
+        })
+        .build();
+
+    // GPU Memory Usage
+    meter
+        .u64_observable_gauge(PROCESS_GPU_MEMORY_USAGE)
+        .with_description("GPU memory usage of the process")
+        .with_callback({
+            move |observer| {
+                if let Ok(nvml) = &nvml {
+                    if let Ok(device) = nvml.device_by_index(0) {
+                        if let Ok(gpu_stats) = device.running_compute_processes() {
+                            for stat in gpu_stats {
+                                if stat.pid == pid.as_u32() {
+                                    let memory_used = match stat.used_gpu_memory {
+                                        UsedGpuMemory::Used(bytes) => bytes,
+                                        UsedGpuMemory::Unavailable => 0,
+                                    };
+                                    observer.observe(memory_used, &[]);
+                                    return;
                                 }
-
-                                // If the loop finishes and no pid matched our pid, put 0.
-                                context.observe_u64(
-                                    &process_gpu_memory_usage,
-                                    0,
-                                    &common_attributes,
-                                );
-                            };
+                            }
                         }
                     }
-                    Err(err) => tracing::info!(
-                        "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
-                        err
-                    ),
                 }
-            },
-        )
-        .context("could not register traceback")?;
+                // Default to 0 if no matching GPU stats found
+                observer.observe(0, &[]);
+            }
+        })
+        .build();
+
     Ok(())
 }
