@@ -17,21 +17,19 @@
 //! ```
 //!
 
-use eyre::Context;
+use std::time::Duration;
+
 use eyre::ContextCompat;
 use eyre::Result;
 use nvml_wrapper::enums::device::UsedGpuMemory;
 use nvml_wrapper::Nvml;
-use opentelemetry::metrics::Unit;
 
-use sysinfo::PidExt;
-
-use sysinfo::ProcessExt;
-use sysinfo::SystemExt;
+use opentelemetry::KeyValue;
 use sysinfo::{get_current_pid, System};
 
 use opentelemetry::metrics::Meter;
 use opentelemetry::Key;
+use tokio::time::sleep;
 
 const PROCESS_PID: Key = Key::from_static_str("process.pid");
 const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
@@ -66,10 +64,10 @@ const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 /// init_process_observer(meter);
 /// ```
 ///
-pub fn init_process_observer(meter: Meter) -> Result<()> {
+pub async fn init_process_observer(meter: Meter) -> Result<()> {
     let pid =
         get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
-    register_metrics(meter, pid)
+    register_metrics(meter, pid).await
 }
 
 /// Record asynchronously information about a specific process by its PID.
@@ -81,15 +79,15 @@ pub fn init_process_observer(meter: Meter) -> Result<()> {
 ///
 /// let meter = global::meter("process-meter");
 /// let pid = 1234; // replace with the actual PID
-/// init_process_observer_for_pid(meter, pid);
+/// init_process_observer_for_pid(meter, pid).await;
 /// ```
 ///
-pub fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
+pub async fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
     let pid = sysinfo::Pid::from_u32(pid);
-    register_metrics(meter, pid)
+    register_metrics(meter, pid).await
 }
 
-fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
+async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
     let sys_ = System::new_all();
     let core_count = sys_
         .physical_core_count()
@@ -98,149 +96,132 @@ fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
     let nvml = Nvml::init();
 
     let process_cpu_utilization = meter
-        .f64_observable_gauge(PROCESS_CPU_USAGE)
+        .f64_gauge(PROCESS_CPU_USAGE)
         .with_description("The percentage of CPU in use.")
-        .init();
+        .with_unit("percent")
+        .build();
     let process_cpu_usage = meter
-        .f64_observable_gauge(PROCESS_CPU_UTILIZATION)
+        .f64_gauge(PROCESS_CPU_UTILIZATION)
         .with_description("The amount of CPU in use.")
-        .init();
+        .with_unit("percent")
+        .build();
     let process_memory_usage = meter
-        .i64_observable_gauge(PROCESS_MEMORY_USAGE)
+        .i64_gauge(PROCESS_MEMORY_USAGE)
         .with_description("The amount of physical memory in use.")
-        .with_unit(Unit::new("byte"))
-        .init();
+        .with_unit("byte")
+        .build();
     let process_memory_virtual = meter
-        .i64_observable_gauge(PROCESS_MEMORY_VIRTUAL)
+        .i64_gauge(PROCESS_MEMORY_VIRTUAL)
         .with_description("The amount of committed virtual memory.")
-        .with_unit(Unit::new("byte"))
-        .init();
+        .with_unit("byte")
+        .build();
     let process_disk_io = meter
-        .i64_observable_gauge(PROCESS_DISK_IO)
+        .i64_gauge(PROCESS_DISK_IO)
         .with_description("Disk bytes transferred.")
-        .with_unit(Unit::new("byte"))
-        .init();
+        .with_unit("byte")
+        .build();
 
     let process_gpu_memory_usage = meter
-        .u64_observable_gauge(PROCESS_GPU_MEMORY_USAGE)
+        .u64_gauge(PROCESS_GPU_MEMORY_USAGE)
         .with_description("The amount of physical GPU memory in use.")
-        .with_unit(Unit::new("byte"))
-        .init();
+        .with_unit("byte")
+        .build();
 
-    meter
-        .register_callback(
-            &[
-                process_cpu_utilization.as_any(),
-                process_cpu_usage.as_any(),
-                process_memory_usage.as_any(),
-                process_memory_virtual.as_any(),
-                process_disk_io.as_any(),
-                process_gpu_memory_usage.as_any(),
-            ],
-            move |context| {
-                let mut sys = System::new_all();
-                sys.refresh_processes();
+    let mut sys = System::new_all();
+    sys.refresh_all();
 
-                let common_attributes = if let Some(process) = sys.process(pid) {
-                    [
-                        PROCESS_PID.i64(pid.as_u32().into()),
-                        PROCESS_EXECUTABLE_NAME.string(process.name().to_string()),
-                        PROCESS_EXECUTABLE_PATH.string(process.exe().to_str().unwrap().to_string()),
-                        PROCESS_COMMAND.string(process.cmd().join(" ").to_string()),
-                    ]
-                } else {
-                    unimplemented!()
-                };
+    let common_attributes = if let Some(process) = sys.process(pid) {
+        [
+            KeyValue::new(PROCESS_PID, pid.as_u32().clone() as i64),
+            KeyValue::new(
+                PROCESS_EXECUTABLE_NAME,
+                process
+                    .name()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap_or_default(),
+            ),
+            KeyValue::new(
+                PROCESS_EXECUTABLE_PATH,
+                process
+                    .exe()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            ),
+            KeyValue::new(
+                PROCESS_COMMAND,
+                process.cmd().iter().fold(String::new(), |t1, t2| {
+                    t1 + " " + t2.to_str().unwrap_or_default()
+                }),
+            ),
+        ]
+    } else {
+        unimplemented!()
+    };
 
-                sys.refresh_process(pid);
+    loop {
+        sleep(Duration::from_millis(500)).await;
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
 
-                if let Some(process) = sys.process(pid) {
-                    let cpu_usage = process.cpu_usage();
-                    let disk_io = process.disk_usage();
-                    // let network_io = process.network_usage();
+        if let Some(process) = sys.process(pid) {
+            let cpu_usage = process.cpu_usage();
+            let disk_io = process.disk_usage();
+            // let status = process.status();
 
-                    context.observe_f64(&process_cpu_usage, cpu_usage.into(), &[]);
-                    context.observe_f64(
-                        &process_cpu_utilization,
-                        (cpu_usage / core_count as f32).into(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_memory_usage,
-                        (process.memory()).try_into().unwrap(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_memory_virtual,
-                        (process.virtual_memory()).try_into().unwrap(),
-                        &common_attributes,
-                    );
-                    context.observe_i64(
-                        &process_disk_io,
-                        disk_io.read_bytes.try_into().unwrap(),
-                        &[common_attributes.as_slice(), &[DIRECTION.string("read")]].concat(),
-                    );
-                    context.observe_i64(
-                        &process_disk_io,
-                        disk_io.written_bytes.try_into().unwrap(),
-                        &[common_attributes.as_slice(), &[DIRECTION.string("write")]].concat(),
-                    );
+            process_cpu_usage.record(cpu_usage.into(), &[]);
+            process_cpu_utilization
+                .record((cpu_usage / core_count as f32).into(), &common_attributes);
+            process_memory_usage.record((process.memory()).try_into().unwrap(), &common_attributes);
+            process_memory_virtual.record(
+                (process.virtual_memory()).try_into().unwrap(),
+                &common_attributes,
+            );
+            process_disk_io.record(
+                disk_io.read_bytes.try_into().unwrap(),
+                &[
+                    common_attributes.as_slice(),
+                    &[KeyValue::new(DIRECTION, "read")],
+                ]
+                .concat(),
+            );
+            process_disk_io.record(
+                disk_io.written_bytes.try_into().unwrap(),
+                &[
+                    common_attributes.as_slice(),
+                    &[KeyValue::new(DIRECTION, "write")],
+                ]
+                .concat(),
+            );
+        }
 
-                    // result.observe(
-                    //     &[common_attributes.as_slice(), &[DIRECTION.string("receive")]].concat(),
-                    //     &[process_network_io
-                    //         .observe(context,(network_io.received_bytes.try_into().unwrap())],
-                    // );
-                    // result.observe(
-                    //     &[
-                    //         common_attributes.as_slice(),
-                    //         &[DIRECTION.string("transmit")],
-                    //     ]
-                    //     .concat(),
-                    //     &[process_network_io
-                    //         .observe(context,(network_io.transmitted_bytes.try_into().unwrap())],
-                    // );
-                }
+        // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
+        match &nvml {
+            Ok(nvml) => {
+                // Get the first `Device` (GPU) in the system
+                if let Ok(device) = nvml.device_by_index(0) {
+                    if let Ok(gpu_stats) = device.running_compute_processes() {
+                        for stat in gpu_stats.iter() {
+                            if stat.pid == pid.as_u32() {
+                                let memory_used = match stat.used_gpu_memory {
+                                    UsedGpuMemory::Used(bytes) => bytes,
+                                    UsedGpuMemory::Unavailable => 0,
+                                };
 
-                // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
-                match &nvml {
-                    Ok(nvml) => {
-                        // Get the first `Device` (GPU) in the system
-                        if let Ok(device) = nvml.device_by_index(0) {
-                            if let Ok(gpu_stats) = device.running_compute_processes() {
-                                for stat in gpu_stats.iter() {
-                                    if stat.pid == pid.as_u32() {
-                                        let memory_used = match stat.used_gpu_memory {
-                                            UsedGpuMemory::Used(bytes) => bytes,
-                                            UsedGpuMemory::Unavailable => 0,
-                                        };
+                                process_gpu_memory_usage.record(memory_used, &common_attributes);
 
-                                        context.observe_u64(
-                                            &process_gpu_memory_usage,
-                                            memory_used,
-                                            &common_attributes,
-                                        );
-
-                                        break;
-                                    }
-                                }
-
-                                // If the loop finishes and no pid matched our pid, put 0.
-                                context.observe_u64(
-                                    &process_gpu_memory_usage,
-                                    0,
-                                    &common_attributes,
-                                );
-                            };
+                                break;
+                            }
                         }
-                    }
-                    Err(err) => tracing::info!(
-                        "Could not initiate NVML for observing GPU memory usage. Error: {:?}",
-                        err
-                    ),
+
+                        // If the loop finishes and no pid matched our pid, put 0.
+                        process_gpu_memory_usage.record(0, &common_attributes);
+                    };
                 }
-            },
-        )
-        .context("could not register traceback")?;
-    Ok(())
+            }
+            Err(_) => {
+                // If we can't get the NVML, we just put 0.
+                process_gpu_memory_usage.record(0, &common_attributes);
+            }
+        }
+    }
 }

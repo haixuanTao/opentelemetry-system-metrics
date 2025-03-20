@@ -1,35 +1,33 @@
-use opentelemetry::{
-    metrics::MeterProvider as _,
-    metrics::{self},
-};
+use opentelemetry::{global, InstrumentationScope};
 
-use opentelemetry_otlp::{ExportConfig, WithExportConfig};
-use opentelemetry_sdk::{metrics::SdkMeterProvider, runtime};
+use opentelemetry_otlp::MetricExporter;
+use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_system_metrics::init_process_observer;
 use std::time::Duration;
 
-fn init_metrics() -> metrics::Result<SdkMeterProvider> {
-    let export_config = ExportConfig {
-        endpoint: "http://localhost:4317".to_string(),
-        ..ExportConfig::default()
-    };
+fn init_metrics() -> SdkMeterProvider {
+    let exporter = MetricExporter::builder()
+        .with_tonic()
+        .build()
+        .expect("Failed to create metric exporter");
 
-    opentelemetry_otlp::new_pipeline()
-        .metrics(runtime::Tokio)
-        .with_exporter(
-            opentelemetry_otlp::new_exporter()
-                .tonic()
-                .with_export_config(export_config),
-        )
-        .with_period(Duration::from_secs(10))
+    SdkMeterProvider::builder()
+        .with_periodic_exporter(exporter)
         .build()
 }
 
 #[tokio::main]
 async fn main() {
-    let meter_provider = init_metrics().unwrap();
-    let meter = meter_provider.meter("mylibraryname");
-    init_process_observer(meter).unwrap();
+    let meter_provider = init_metrics();
+    global::set_meter_provider(meter_provider.clone());
+    let scope = InstrumentationScope::builder("basic")
+        .with_version("1.0")
+        .build();
+    let meter = global::meter_with_scope(scope);
+
+    println!("Start process observer");
+    init_process_observer(meter).await.unwrap();
+    println!("Finished process observer");
 
     // Do some work
 
