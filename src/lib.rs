@@ -30,6 +30,7 @@ use sysinfo::{get_current_pid, System};
 use opentelemetry::metrics::Meter;
 use opentelemetry::Key;
 use tokio::time::sleep;
+use tracing::warn;
 
 const PROCESS_PID: Key = Key::from_static_str("process.pid");
 const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
@@ -159,8 +160,13 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
         unimplemented!()
     };
 
+    let interval = std::env::var("OTEL_METRIC_EXPORT_INTERVAL")
+        .unwrap_or_else(|_| "30000".to_string())
+        .parse::<u64>()
+        .unwrap_or(30000);
+
     loop {
-        sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(interval)).await;
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
 
         if let Some(process) = sys.process(pid) {
@@ -212,15 +218,12 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
                                 break;
                             }
                         }
-
-                        // If the loop finishes and no pid matched our pid, put 0.
-                        process_gpu_memory_usage.record(0, &common_attributes);
                     };
                 }
             }
             Err(_) => {
                 // If we can't get the NVML, we just put 0.
-                process_gpu_memory_usage.record(0, &common_attributes);
+                warn!("Could not get NVML, recording 0 for GPU memory usage");
             }
         }
     }
