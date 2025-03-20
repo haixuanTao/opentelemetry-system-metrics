@@ -1,0 +1,28 @@
+[package]
+name = "otel_system_metrics"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "otel_system_metrics"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+pyo3 = { version = "0.24.0", features = ["abi3-py37"] }
+opentelemetry-system-metrics = { path = ".." }
+opentelemetry_sdk = { version = "0.28.0", features = ["rt-tokio", "metrics"] }
+futures = "0.3.12"
+tokio = { version = "1.17.0", features = [
+    "rt",
+    "rt-multi-thread",
+    "time",
+    "macros",
+] }
+opentelemetry-otlp = { version = "0.28.0", features = [
+    "tonic",
+    "metrics",
+    "grpc-tonic",
+] }
+opentelemetry = { version = "0.28.0", features = ["metrics"] }
