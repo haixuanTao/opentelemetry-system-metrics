@@ -231,3 +231,32 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::global;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_init_process_observer() {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let meter = global::meter("test-meter");
+            let result = init_process_observer(meter).await;
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_init_process_observer_for_pid() {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let meter = global::meter("test-meter");
+            let pid = get_current_pid().unwrap();
+            println!("pid: {:?}", pid);
+            let result = init_process_observer_for_pid(meter, pid.as_u32()).await;
+            assert!(result.is_ok());
+        });
+    }
+}
