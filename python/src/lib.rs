@@ -1,9 +1,7 @@
 use opentelemetry::{global, InstrumentationScope};
-
-use opentelemetry_system_metrics::init_process_observer;
-
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_system_metrics::init_process_observer;
 use pyo3::prelude::*;
 use tokio::runtime::Builder;
 use tokio::runtime::Runtime;

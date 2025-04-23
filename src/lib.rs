@@ -12,23 +12,23 @@
 //! use opentelemetry::global;
 //! use opentelemetry_system_metrics::init_process_observer;
 //!
-//! let meter = global::meter("process-meter");
-//! init_process_observer(meter);
+//! #[tokio::main]
+//! async fn main() {
+//!     let meter = global::meter("process-meter");
+//!     let result = init_process_observer(meter);
+//! }
 //! ```
 //!
-
-use std::time::Duration;
 
 use eyre::ContextCompat;
 use eyre::Result;
 use nvml_wrapper::enums::device::UsedGpuMemory;
 use nvml_wrapper::Nvml;
-
-use opentelemetry::KeyValue;
-use sysinfo::{get_current_pid, System};
-
 use opentelemetry::metrics::Meter;
 use opentelemetry::Key;
+use opentelemetry::KeyValue;
+use std::time::Duration;
+use sysinfo::{get_current_pid, System};
 use tokio::time::sleep;
 use tracing::warn;
 
@@ -54,15 +54,18 @@ const DIRECTION: Key = Key::from_static_str("direction");
 // const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
-/// Record asynchronnously information about the current process.
+/// Record asynchronously information about the current process.
 /// # Example
 ///
 /// ```
 /// use opentelemetry::global;
 /// use opentelemetry_system_metrics::init_process_observer;
 ///
-/// let meter = global::meter("process-meter");
-/// init_process_observer(meter);
+/// #[tokio::main]
+/// async fn main() {
+///     let meter = global::meter("process-meter");
+///     let result = init_process_observer(meter);
+/// }
 /// ```
 ///
 pub async fn init_process_observer(meter: Meter) -> Result<()> {
@@ -78,9 +81,12 @@ pub async fn init_process_observer(meter: Meter) -> Result<()> {
 /// use opentelemetry::global;
 /// use opentelemetry_system_metrics::init_process_observer_for_pid;
 ///
-/// let meter = global::meter("process-meter");
-/// let pid = 1234; // replace with the actual PID
-/// init_process_observer_for_pid(meter, pid).await;
+/// #[tokio::main]
+/// async fn main() {
+///     let meter = global::meter("process-meter");
+///     let pid = 1234; // replace with the actual PID
+///     let result = init_process_observer_for_pid(meter, pid).await;
+/// }
 /// ```
 ///
 pub async fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
@@ -89,10 +95,8 @@ pub async fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()>
 }
 
 async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
-    let sys_ = System::new_all();
-    let core_count = sys_
-        .physical_core_count()
-        .with_context(|| "Could not get physical core count")?;
+    let core_count =
+        System::physical_core_count().with_context(|| "Could not get physical core count")?;
 
     let nvml = Nvml::init();
 
@@ -177,13 +181,11 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
             process_cpu_usage.record(cpu_usage.into(), &[]);
             process_cpu_utilization
                 .record((cpu_usage / core_count as f32).into(), &common_attributes);
-            process_memory_usage.record((process.memory()).try_into().unwrap(), &common_attributes);
-            process_memory_virtual.record(
-                (process.virtual_memory()).try_into().unwrap(),
-                &common_attributes,
-            );
+            process_memory_usage.record((process.memory()).try_into()?, &common_attributes);
+            process_memory_virtual
+                .record((process.virtual_memory()).try_into()?, &common_attributes);
             process_disk_io.record(
-                disk_io.read_bytes.try_into().unwrap(),
+                disk_io.read_bytes.try_into()?,
                 &[
                     common_attributes.as_slice(),
                     &[KeyValue::new(DIRECTION, "read")],
@@ -191,7 +193,7 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
                 .concat(),
             );
             process_disk_io.record(
-                disk_io.written_bytes.try_into().unwrap(),
+                disk_io.written_bytes.try_into()?,
                 &[
                     common_attributes.as_slice(),
                     &[KeyValue::new(DIRECTION, "write")],

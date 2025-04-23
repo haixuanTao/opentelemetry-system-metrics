@@ -1,5 +1,4 @@
 use opentelemetry::{global, InstrumentationScope};
-
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
 use opentelemetry_system_metrics::init_process_observer;
