@@ -80,12 +80,13 @@ pub async fn init_process_observer(meter: Meter) -> Result<()> {
 /// ```
 /// use opentelemetry::global;
 /// use opentelemetry_system_metrics::init_process_observer_for_pid;
+/// use sysinfo::get_current_pid;
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let meter = global::meter("process-meter");
-///     let pid = 1234; // replace with the actual PID
-///     let result = init_process_observer_for_pid(meter, pid).await;
+///     let pid = get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}")).expect("get current pid failed");
+///     let result = init_process_observer_for_pid(meter, pid.as_u32()).await;
 /// }
 /// ```
 ///
