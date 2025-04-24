@@ -34,7 +34,7 @@ fn init() -> PyResult<PyRuntime> {
             .with_version("1.0")
             .build();
         let meter = global::meter_with_scope(scope);
-        init_process_observer(meter).await.unwrap();
+        init_process_observer(meter, None).await.unwrap();
     });
     Ok(PyRuntime(rt))
 }

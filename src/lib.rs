@@ -8,6 +8,18 @@
 //!
 //! # Getting started
 //!
+//! To use this crate, add the following to your `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! opentelemetry = "0.29"
+//! opentelemetry-system-metrics = "0.4"
+//! tokio = { version = "1", features = ["full"] }
+//! sysinfo = "0.34"
+//! nvml-wrapper = "0.10"
+//! eyre = { version = "0.6", features = ["tokio"] }
+//! tracing = "0.1"
+//! ```
+//!
 //! ```
 //! use opentelemetry::global;
 //! use opentelemetry_system_metrics::init_process_observer;
@@ -15,7 +27,7 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let meter = global::meter("process-meter");
-//!     let result = init_process_observer(meter);
+//!     let result = init_process_observer(meter, Some(1)).await;
 //! }
 //! ```
 //!
@@ -36,13 +48,6 @@ const PROCESS_PID: Key = Key::from_static_str("process.pid");
 const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
 const PROCESS_EXECUTABLE_PATH: Key = Key::from_static_str("process.executable.path");
 const PROCESS_COMMAND: Key = Key::from_static_str("process.command");
-
-// Not implemented yet!
-//
-// const PROCESS_COMMAND_LINE: Key = Key::from_static_str("process.command_line");
-// const PROCESS_COMMAND_ARGS: Key = Key::from_static_str("process.command_args");
-// const PROCESS_OWNER: Key = Key::from_static_str("process.owner");
-
 const PROCESS_CPU_USAGE: &str = "process.cpu.usage";
 const PROCESS_CPU_UTILIZATION: &str = "process.cpu.utilization";
 const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
@@ -50,13 +55,15 @@ const PROCESS_MEMORY_VIRTUAL: &str = "process.memory.virtual";
 const PROCESS_DISK_IO: &str = "process.disk.io";
 // const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
-
-// const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
 /// Record asynchronously information about the current process.
-/// # Example
 ///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+/// * `iterations`: Optional number of iterations to run the observer. If `None`, it will run indefinitely.
+///
+/// # Example
 /// ```
 /// use opentelemetry::global;
 /// use opentelemetry_system_metrics::init_process_observer;
@@ -64,19 +71,23 @@ const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 /// #[tokio::main]
 /// async fn main() {
 ///     let meter = global::meter("process-meter");
-///     let result = init_process_observer(meter);
+///     let result = init_process_observer(meter,Some(1)).await;
 /// }
 /// ```
-///
-pub async fn init_process_observer(meter: Meter) -> Result<()> {
+pub async fn init_process_observer(meter: Meter, iterations: Option<usize>) -> Result<()> {
     let pid =
         get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
-    register_metrics(meter, pid).await
+    register_metrics(meter, pid, iterations).await
 }
 
 /// Record asynchronously information about a specific process by its PID.
-/// # Example
 ///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+/// * `pid`: The PID of the process to observe.
+/// * `iterations`: Optional number of iterations to run the observer. If `None`, it will run indefinitely.
+///
+/// # Example
 /// ```
 /// use opentelemetry::global;
 /// use opentelemetry_system_metrics::init_process_observer_for_pid;
@@ -86,16 +97,30 @@ pub async fn init_process_observer(meter: Meter) -> Result<()> {
 /// async fn main() {
 ///     let meter = global::meter("process-meter");
 ///     let pid = get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}")).expect("get current pid failed");
-///     let result = init_process_observer_for_pid(meter, pid.as_u32()).await;
+///     let result = init_process_observer_for_pid(meter, pid.as_u32(),Some(1)).await;
 /// }
 /// ```
-///
-pub async fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
+pub async fn init_process_observer_for_pid(
+    meter: Meter,
+    pid: u32,
+    iterations: Option<usize>,
+) -> Result<()> {
     let pid = sysinfo::Pid::from_u32(pid);
-    register_metrics(meter, pid).await
+    register_metrics(meter, pid, iterations).await
 }
 
-async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
+/// Register metrics for the current process.
+///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+/// * `pid`: The PID of the process to observe.
+/// * `iterations`: Optional number of iterations to run the observer. If `None`, it will run indefinitely.
+///
+async fn register_metrics(
+    meter: Meter,
+    pid: sysinfo::Pid,
+    iterations: Option<usize>,
+) -> Result<()> {
     let core_count =
         System::physical_core_count().with_context(|| "Could not get physical core count")?;
 
@@ -170,6 +195,7 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
         .parse::<u64>()
         .unwrap_or(30000);
 
+    let mut counter = 0;
     loop {
         sleep(Duration::from_millis(interval)).await;
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
@@ -201,6 +227,12 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
                 ]
                 .concat(),
             );
+            if let Some(max) = iterations {
+                counter += 1;
+                if counter >= max && max > 0 {
+                    break Ok(());
+                }
+            }
         }
 
         // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
@@ -243,7 +275,7 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let meter = global::meter("test-meter");
-            let result = init_process_observer(meter).await;
+            let result = init_process_observer(meter, Some(1)).await;
             assert!(result.is_ok());
         });
     }
@@ -253,9 +285,12 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             let meter = global::meter("test-meter");
-            let pid = get_current_pid().unwrap();
-            println!("pid: {:?}", pid);
-            let result = init_process_observer_for_pid(meter, pid.as_u32()).await;
+            let pid = get_current_pid()
+                .map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))
+                .unwrap();
+            println!("Current PID: {}", pid);
+            println!("u32 pid: {}", pid.as_u32());
+            let result = init_process_observer_for_pid(meter, pid.as_u32(), Some(1)).await;
             assert!(result.is_ok());
         });
     }
