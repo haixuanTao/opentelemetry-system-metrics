@@ -25,7 +25,7 @@ async fn main() {
     let meter = global::meter_with_scope(scope);
 
     println!("Start process observer");
-    init_process_observer(meter, Some(1)).await.unwrap();
+    init_process_observer(meter).await.unwrap();
     println!("Finished process observer");
 
     // Do some work

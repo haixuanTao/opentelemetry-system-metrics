@@ -18,7 +18,7 @@ fn init_metrics() -> SdkMeterProvider {
 async fn main() {
     let meter_provider = init_metrics();
     let meter = meter_provider.meter("mylibraryname");
-    let _ = init_process_observer(meter, Some(1)).await.unwrap();
+    let _ = init_process_observer(meter).await.unwrap();
 
     tokio::time::sleep(Duration::from_secs(60)).await;
     meter_provider.shutdown().unwrap();
