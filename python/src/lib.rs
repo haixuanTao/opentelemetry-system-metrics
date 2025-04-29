@@ -1,9 +1,7 @@
 use opentelemetry::{global, InstrumentationScope};
-
-use opentelemetry_system_metrics::init_process_observer;
-
 use opentelemetry_otlp::MetricExporter;
 use opentelemetry_sdk::metrics::SdkMeterProvider;
+use opentelemetry_system_metrics::init_process_observer;
 use pyo3::prelude::*;
 use tokio::runtime::Builder;
 use tokio::runtime::Runtime;
@@ -36,7 +34,7 @@ fn init() -> PyResult<PyRuntime> {
             .with_version("1.0")
             .build();
         let meter = global::meter_with_scope(scope);
-        init_process_observer(meter).await.unwrap();
+        init_process_observer(meter, None).await.unwrap();
     });
     Ok(PyRuntime(rt))
 }

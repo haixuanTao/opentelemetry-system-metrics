@@ -8,27 +8,40 @@
 //!
 //! # Getting started
 //!
+//! To use this crate, add the following to your `Cargo.toml`:
+//! ```toml
+//! [dependencies]
+//! opentelemetry = "0.29"
+//! opentelemetry-system-metrics = "0.4"
+//! tokio = { version = "1", features = ["full"] }
+//! sysinfo = "0.34"
+//! nvml-wrapper = "0.10"
+//! eyre = { version = "0.6", features = ["tokio"] }
+//! tracing = "0.1"
+//! ```
+//!
 //! ```
 //! use opentelemetry::global;
 //! use opentelemetry_system_metrics::init_process_observer;
 //!
-//! let meter = global::meter("process-meter");
-//! init_process_observer(meter);
+//! #[tokio::main]
+//! async fn main() {
+//!     use opentelemetry_system_metrics::init_process_observer_once;
+//!     let meter = global::meter("process-meter");
+//!     let result = init_process_observer_once(meter).await;
+//! }
 //! ```
 //!
-
-use std::time::Duration;
 
 use eyre::ContextCompat;
 use eyre::Result;
 use nvml_wrapper::enums::device::UsedGpuMemory;
 use nvml_wrapper::Nvml;
-
-use opentelemetry::KeyValue;
-use sysinfo::{get_current_pid, System};
-
 use opentelemetry::metrics::Meter;
 use opentelemetry::Key;
+use opentelemetry::KeyValue;
+use std::time::Duration;
+use sysinfo::{get_current_pid, System};
 use tokio::time::sleep;
 use tracing::warn;
 
@@ -36,13 +49,6 @@ const PROCESS_PID: Key = Key::from_static_str("process.pid");
 const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
 const PROCESS_EXECUTABLE_PATH: Key = Key::from_static_str("process.executable.path");
 const PROCESS_COMMAND: Key = Key::from_static_str("process.command");
-
-// Not implemented yet!
-//
-// const PROCESS_COMMAND_LINE: Key = Key::from_static_str("process.command_line");
-// const PROCESS_COMMAND_ARGS: Key = Key::from_static_str("process.command_args");
-// const PROCESS_OWNER: Key = Key::from_static_str("process.owner");
-
 const PROCESS_CPU_USAGE: &str = "process.cpu.usage";
 const PROCESS_CPU_UTILIZATION: &str = "process.cpu.utilization";
 const PROCESS_MEMORY_USAGE: &str = "process.memory.usage";
@@ -50,49 +56,64 @@ const PROCESS_MEMORY_VIRTUAL: &str = "process.memory.virtual";
 const PROCESS_DISK_IO: &str = "process.disk.io";
 // const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
-
-// const PROCESS_GPU_USAGE: &str = "process.gpu.usage";
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
-/// Record asynchronnously information about the current process.
-/// # Example
+/// Record asynchronously information about the current process.
 ///
-/// ```
-/// use opentelemetry::global;
-/// use opentelemetry_system_metrics::init_process_observer;
-///
-/// let meter = global::meter("process-meter");
-/// init_process_observer(meter);
-/// ```
-///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
 pub async fn init_process_observer(meter: Meter) -> Result<()> {
     let pid =
         get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
-    register_metrics(meter, pid).await
+    register_metrics(meter, pid, None).await
 }
 
 /// Record asynchronously information about a specific process by its PID.
-/// # Example
 ///
-/// ```
-/// use opentelemetry::global;
-/// use opentelemetry_system_metrics::init_process_observer_for_pid;
-///
-/// let meter = global::meter("process-meter");
-/// let pid = 1234; // replace with the actual PID
-/// init_process_observer_for_pid(meter, pid).await;
-/// ```
-///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+/// * `pid`: The PID of the process to observe.
 pub async fn init_process_observer_for_pid(meter: Meter, pid: u32) -> Result<()> {
     let pid = sysinfo::Pid::from_u32(pid);
-    register_metrics(meter, pid).await
+    register_metrics(meter, pid, None).await
 }
 
-async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
-    let sys_ = System::new_all();
-    let core_count = sys_
-        .physical_core_count()
-        .with_context(|| "Could not get physical core count")?;
+/// Record asynchronously information about the current process once.
+///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+///
+/// # Example
+/// ```
+/// use opentelemetry::global;
+/// use opentelemetry_system_metrics::init_process_observer_once;
+///
+/// #[tokio::main]
+/// async fn main() {
+///    let meter = global::meter("process-meter");
+///   let result = init_process_observer_once(meter).await;
+/// }
+/// ```
+pub async fn init_process_observer_once(meter: Meter) -> Result<()> {
+    let pid =
+        get_current_pid().map_err(|err| eyre::eyre!("could not get current pid. Error: {err}"))?;
+    register_metrics(meter, pid, Some(1)).await
+}
+
+/// Register metrics for the current process.
+///
+/// # Parameters
+/// * `meter`: The OpenTelemetry meter to use for recording metrics.
+/// * `pid`: The PID of the process to observe.
+/// * `iterations`: Optional number of iterations to run the observer. If `None`, it will run indefinitely.
+///
+async fn register_metrics(
+    meter: Meter,
+    pid: sysinfo::Pid,
+    iterations: Option<usize>,
+) -> Result<()> {
+    let core_count =
+        System::physical_core_count().with_context(|| "Could not get physical core count")?;
 
     let nvml = Nvml::init();
 
@@ -165,6 +186,7 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
         .parse::<u64>()
         .unwrap_or(30000);
 
+    let mut counter = 0;
     loop {
         sleep(Duration::from_millis(interval)).await;
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
@@ -177,13 +199,11 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
             process_cpu_usage.record(cpu_usage.into(), &[]);
             process_cpu_utilization
                 .record((cpu_usage / core_count as f32).into(), &common_attributes);
-            process_memory_usage.record((process.memory()).try_into().unwrap(), &common_attributes);
-            process_memory_virtual.record(
-                (process.virtual_memory()).try_into().unwrap(),
-                &common_attributes,
-            );
+            process_memory_usage.record((process.memory()).try_into()?, &common_attributes);
+            process_memory_virtual
+                .record((process.virtual_memory()).try_into()?, &common_attributes);
             process_disk_io.record(
-                disk_io.read_bytes.try_into().unwrap(),
+                disk_io.read_bytes.try_into()?,
                 &[
                     common_attributes.as_slice(),
                     &[KeyValue::new(DIRECTION, "read")],
@@ -191,13 +211,19 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
                 .concat(),
             );
             process_disk_io.record(
-                disk_io.written_bytes.try_into().unwrap(),
+                disk_io.written_bytes.try_into()?,
                 &[
                     common_attributes.as_slice(),
                     &[KeyValue::new(DIRECTION, "write")],
                 ]
                 .concat(),
             );
+            if let Some(max) = iterations {
+                counter += 1;
+                if counter >= max && max > 0 {
+                    break Ok(());
+                }
+            }
         }
 
         // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
@@ -226,5 +252,22 @@ async fn register_metrics(meter: Meter, pid: sysinfo::Pid) -> Result<()> {
                 warn!("Could not get NVML, recording 0 for GPU memory usage");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentelemetry::global;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_init_process_observer_once() {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let meter = global::meter("test-meter");
+            let result = init_process_observer_once(meter).await;
+            assert!(result.is_ok());
+        });
     }
 }
