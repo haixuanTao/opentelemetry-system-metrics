@@ -149,8 +149,8 @@ async fn register_metrics(
         .with_unit("byte")
         .build();
 
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
 
     let common_attributes = if let Some(process) = sys.process(pid) {
         [
