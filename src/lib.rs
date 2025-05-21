@@ -42,7 +42,6 @@ use opentelemetry::Key;
 use opentelemetry::KeyValue;
 use std::time::Duration;
 use sysinfo::{get_current_pid, System};
-use tokio::time::sleep;
 use tracing::warn;
 
 const PROCESS_PID: Key = Key::from_static_str("process.pid");
@@ -181,14 +180,17 @@ async fn register_metrics(
         unimplemented!()
     };
 
-    let interval = std::env::var("OTEL_METRIC_EXPORT_INTERVAL")
-        .unwrap_or_else(|_| "30000".to_string())
-        .parse::<u64>()
-        .unwrap_or(30000);
+    let mut interval = tokio::time::interval(Duration::from_millis(
+        std::env::var("OTEL_METRIC_EXPORT_INTERVAL")
+            .unwrap_or_else(|_| "30000".to_string())
+            .parse::<u64>()
+            .unwrap_or(30000),
+    ));
 
     let mut counter = 0;
     loop {
-        sleep(Duration::from_millis(interval)).await;
+        interval.tick().await;
+
         sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
 
         if let Some(process) = sys.process(pid) {
