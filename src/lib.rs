@@ -251,7 +251,6 @@ async fn register_metrics(
             }
             Err(_) => {
                 // If we can't get the NVML, we just put 0.
-                warn!("Could not get NVML, recording 0 for GPU memory usage");
             }
         }
     }
