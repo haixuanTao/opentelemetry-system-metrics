@@ -188,7 +188,6 @@ async fn register_metrics(
     ));
 
     let mut counter = 0;
-    let mut warned = false;
     loop {
         interval.tick().await;
 
@@ -252,10 +251,6 @@ async fn register_metrics(
             }
             Err(_) => {
                 // If we can't get the NVML, we just put 0.
-                if !warned {
-                    warn!("Could not get NVML, recording 0 for GPU memory usage");
-                    warned = true;
-                }
             }
         }
     }
