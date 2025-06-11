@@ -4,6 +4,7 @@
 //! - Memory
 //! - Disk
 //! - Network
+//! - GPU (optional, see below)
 //!
 //!
 //! # Getting started
@@ -15,9 +16,17 @@
 //! opentelemetry-system-metrics = "0.4"
 //! tokio = { version = "1", features = ["full"] }
 //! sysinfo = "0.34"
-//! nvml-wrapper = "0.10"
 //! eyre = { version = "0.6", features = ["tokio"] }
 //! tracing = "0.1"
+//! ```
+//!
+//! ## GPU metrics
+//!
+//! GPU metrics are optional. To enable GPU metrics, enable the `gpu` feature for this crate.
+//!
+//! ```toml
+//! [dependencies]
+//! opentelemetry-system-metrics = { version = "0.4", features = ["gpu"] }
 //! ```
 //!
 //! ```
@@ -35,14 +44,15 @@
 
 use eyre::ContextCompat;
 use eyre::Result;
+#[cfg(feature = "gpu")]
 use nvml_wrapper::enums::device::UsedGpuMemory;
+#[cfg(feature = "gpu")]
 use nvml_wrapper::Nvml;
 use opentelemetry::metrics::Meter;
 use opentelemetry::Key;
 use opentelemetry::KeyValue;
 use std::time::Duration;
 use sysinfo::{get_current_pid, System};
-use tracing::warn;
 
 const PROCESS_PID: Key = Key::from_static_str("process.pid");
 const PROCESS_EXECUTABLE_NAME: Key = Key::from_static_str("process.executable.name");
@@ -55,6 +65,7 @@ const PROCESS_MEMORY_VIRTUAL: &str = "process.memory.virtual";
 const PROCESS_DISK_IO: &str = "process.disk.io";
 // const PROCESS_NETWORK_IO: &str = "process.network.io";
 const DIRECTION: Key = Key::from_static_str("direction");
+#[cfg(feature = "gpu")]
 const PROCESS_GPU_MEMORY_USAGE: &str = "process.gpu.memory.usage";
 
 /// Record asynchronously information about the current process.
@@ -114,6 +125,7 @@ async fn register_metrics(
     let core_count =
         System::physical_core_count().with_context(|| "Could not get physical core count")?;
 
+    #[cfg(feature = "gpu")]
     let nvml = Nvml::init();
 
     let process_cpu_utilization = meter
@@ -142,6 +154,7 @@ async fn register_metrics(
         .with_unit("byte")
         .build();
 
+    #[cfg(feature = "gpu")]
     let process_gpu_memory_usage = meter
         .u64_gauge(PROCESS_GPU_MEMORY_USAGE)
         .with_description("The amount of physical GPU memory in use.")
@@ -228,29 +241,32 @@ async fn register_metrics(
             }
         }
 
-        // let mut last_timestamp = last_timestamp.lock().unwrap().clone();
-        match &nvml {
-            Ok(nvml) => {
-                // Get the first `Device` (GPU) in the system
-                if let Ok(device) = nvml.device_by_index(0) {
-                    if let Ok(gpu_stats) = device.running_compute_processes() {
-                        for stat in gpu_stats.iter() {
-                            if stat.pid == pid.as_u32() {
-                                let memory_used = match stat.used_gpu_memory {
-                                    UsedGpuMemory::Used(bytes) => bytes,
-                                    UsedGpuMemory::Unavailable => 0,
-                                };
+        #[cfg(feature = "gpu")]
+        {
+            match &nvml {
+                Ok(nvml) => {
+                    // Get the first `Device` (GPU) in the system
+                    if let Ok(device) = nvml.device_by_index(0) {
+                        if let Ok(gpu_stats) = device.running_compute_processes() {
+                            for stat in gpu_stats.iter() {
+                                if stat.pid == pid.as_u32() {
+                                    let memory_used = match stat.used_gpu_memory {
+                                        UsedGpuMemory::Used(bytes) => bytes,
+                                        UsedGpuMemory::Unavailable => 0,
+                                    };
 
-                                process_gpu_memory_usage.record(memory_used, &common_attributes);
+                                    process_gpu_memory_usage
+                                        .record(memory_used, &common_attributes);
 
-                                break;
+                                    break;
+                                }
                             }
-                        }
-                    };
+                        };
+                    }
                 }
-            }
-            Err(_) => {
-                // If we can't get the NVML, we just put 0.
+                Err(_) => {
+                    // If we can't get the NVML, we just put 0.
+                }
             }
         }
     }
