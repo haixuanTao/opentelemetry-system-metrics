@@ -96,11 +96,21 @@ jobs:
           name: wheels-sdist
           path: dist
 
-  release:
-    name: Release
+  publish-crate:
+    name: Publish Rust Crate
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [linux, windows, macos, sdist]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  release:
+    name: Release Python Package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, windows, macos, sdist, publish-crate]
     permissions:
       id-token: write
     steps:
