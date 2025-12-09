@@ -1,6 +1,6 @@
 [package]
 name = "opentelemetry-system-metrics"
-version = "0.4.3"
+version = "0.31.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "System metric export through Opentelemetry"
@@ -13,7 +13,7 @@ default = []
 gpu = ["nvml-wrapper"]
 
 [dependencies]
-opentelemetry = { version = "0.30", features = ["metrics"] }
+opentelemetry = { version = "0.31", features = ["metrics"] }
 sysinfo = "0.35"
 nvml-wrapper = { version = "0.11.0", optional = true }
 eyre = "0.6.12"
@@ -26,14 +26,14 @@ tokio = { version = "1.44.2", features = [
 ] }
 
 [dev-dependencies]
-opentelemetry_sdk = { version = "0.30", features = ["rt-tokio", "metrics"] }
-opentelemetry-otlp = { version = "0.30", features = [
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "metrics"] }
+opentelemetry-otlp = { version = "0.31", features = [
     "tonic",
     "metrics",
     "grpc-tonic",
 ] }
 eyre = "0.6.12"
-opentelemetry-stdout = { version = "0.30", features = ["metrics"] }
+opentelemetry-stdout = { version = "0.31", features = ["metrics"] }
 
 [[example]]
 name = "otlp-tokio-metrics"
