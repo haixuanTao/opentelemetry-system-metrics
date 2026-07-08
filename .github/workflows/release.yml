@@ -105,7 +105,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Publish to crates.io
         run: |
-          version=$(cargo pkgid | cut -d'#' -f2)
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           if curl -sfA "release-workflow" "https://crates.io/api/v1/crates/opentelemetry-system-metrics/${version}" | grep -q '"num"'; then
             echo "opentelemetry-system-metrics ${version} already on crates.io, skipping"
           else
